@@ -54,7 +54,7 @@ export async function insertThought(params: {
     );
     const row = res.rows[0];
     if (!row) throw new Error("Insert failed");
-    return parseThoughtRow(row);
+    return parseThoughtRow(row as unknown as Record<string, unknown>);
   } finally {
     client.release();
   }

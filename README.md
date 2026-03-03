@@ -10,19 +10,80 @@ One shared memory layer for Cursor, Claude, and any MCP client: thoughts stored 
 
 - **Node.js** 18+
 - **Postgres** 15+ with the **pgvector** extension (e.g. [Supabase](https://supabase.com) free tier, or self‑hosted).
-- **OpenAI API key** (for embeddings).
+- **OpenAI API key** (for embeddings), or **Ollama** for free local embeddings (see [Using Ollama](#using-ollama-free-embeddings) below).
+
+## Finish setup on this machine
+
+1. **Build** (in a terminal where Node/npm are available):
+   ```powershell
+   cd "c:\Users\rix\OneDrive\open-brain"
+   npm install
+   npm run build
+   ```
+2. **Env**: Edit `.env` in the project root and set `DATABASE_URL` and `OPENAI_API_KEY`.
+3. **Database**: If you don’t have a DB yet, follow [Database setup](#1-database-setup) below (Supabase free tier is the easiest). Then run [schema.sql](schema.sql) once.
+4. **Cursor**: Add the Open Brain MCP server in Cursor Settings → MCP (see [Connect clients](#3-connect-clients) below), then reload the window.
+
+---
+
+## Using Ollama (free embeddings)
+
+To avoid paying for OpenAI, you can use **Ollama** with **nomic-embed-text** (runs locally, no API key).
+
+1. **Install Ollama** from [ollama.com](https://ollama.com) and start it.
+2. **Pull the embedding model:**  
+   `ollama pull nomic-embed-text`
+3. **In `.env`:** set `EMBEDDING_PROVIDER=ollama`. Optionally set `OLLAMA_HOST=http://localhost:11434` if Ollama runs elsewhere. You do **not** need `OPENAI_API_KEY`.
+4. **Database:** The Ollama model uses **768 dimensions** (not 1536). If you already have a `thoughts` table from the OpenAI schema, drop it and re-run the Ollama schema:  
+   In Supabase SQL Editor, run `DROP TABLE IF EXISTS thoughts;` then paste and run the contents of [schema-ollama.sql](schema-ollama.sql).
+5. **Cursor MCP:** In the Open Brain server env, include `EMBEDDING_PROVIDER=ollama` (and optionally `OLLAMA_HOST`). No `OPENAI_API_KEY` needed.
+6. Restart Cursor (or reload the window).
+
+After that, capture and search use your local Ollama embeddings. You cannot mix OpenAI (1536) and Ollama (768) in the same table.
+
+---
 
 ## 1. Database setup
 
-Create a Postgres database and run the schema once:
+Open Brain needs **Postgres 15+** with the **pgvector** extension. The easiest way is [Supabase](https://supabase.com) (free tier, pgvector included).
 
-```bash
-# If using Supabase: use the SQL editor in the dashboard and paste schema.sql.
-# If using psql:
-psql $DATABASE_URL -f schema.sql
-```
+### Option A: Supabase (recommended, free)
 
-Or paste the contents of [schema.sql](schema.sql) into your Postgres client. This creates the `thoughts` table and an HNSW index for vector search.
+1. **Create an account**  
+   Go to [supabase.com](https://supabase.com) and sign up (GitHub or email).
+
+2. **Create a project**  
+   - Click **New project**.  
+   - Choose your **organization** (or create one).  
+   - Set **Name** (e.g. `open-brain`), **Database password** (save it somewhere safe), and **Region**.  
+   - Click **Create new project** and wait until it’s ready.
+
+3. **Get the connection string**  
+   - In the left sidebar: **Project Settings** (gear) → **Database**.  
+   - Under **Connection string** choose **URI**.  
+   - Copy the URI. It looks like:  
+     `postgresql://postgres.[ref]:[YOUR-PASSWORD]@aws-0-[region].pooler.supabase.com:6543/postgres`  
+   - Replace `[YOUR-PASSWORD]` with the database password you set in step 2.  
+   - **If your password has special characters** (`@`, `#`, `/`, `%`, etc.), they must be URL-encoded in the URI. Run:  
+     `node scripts/encode-password.mjs "YourPassword"`  
+     and use the output in place of the password in the URL.  
+   - Put this full URI in your `.env` as `DATABASE_URL`.
+
+4. **Run the schema**  
+   - In the left sidebar: **SQL Editor**.  
+   - Click **New query**.  
+   - Open [schema.sql](schema.sql) in this repo, copy its **entire** contents, paste into the editor, and click **Run** (or Ctrl+Enter).  
+   - You should see “Success. No rows returned.” The `thoughts` table and vector index are now created.
+
+5. **Use the same `DATABASE_URL`** in your `.env` and in Cursor’s MCP config for the Open Brain server.
+
+### Option B: Other Postgres (with pgvector)
+
+If you use another host (e.g. Neon, Railway, or your own server):
+
+- Ensure **pgvector** is enabled (run `CREATE EXTENSION IF NOT EXISTS vector;` if needed).
+- Connection string format: `postgresql://USER:PASSWORD@HOST:PORT/DATABASE`.
+- Run the contents of [schema.sql](schema.sql) once (e.g. via `psql $DATABASE_URL -f schema.sql` or your host’s SQL runner).
 
 ## 2. Install and run the MCP server
 
@@ -102,14 +163,14 @@ All tools return plain text (and optional metadata) so any model can interpret t
 
 ## Embedding model
 
-The server uses **OpenAI `text-embedding-3-small`** (1536 dimensions) for every capture and every search query so the vector space is consistent. Do not change the embedding model without re-embedding existing rows.
+By default the server uses **OpenAI `text-embedding-3-small`** (1536 dimensions). If `EMBEDDING_PROVIDER=ollama` (or `OPENAI_API_KEY` is unset and `OLLAMA_HOST` is set), it uses **Ollama `nomic-embed-text`** (768 dimensions) instead. Use the matching schema ([schema.sql](schema.sql) for OpenAI, [schema-ollama.sql](schema-ollama.sql) for Ollama). Do not change the embedding model without re-embedding existing rows.
 
 ## Project layout
 
-- `schema.sql` – Postgres + pgvector schema (run once).
+- `schema.sql` – Postgres + pgvector schema for OpenAI (1536 dims). `schema-ollama.sql` for Ollama (768 dims).
 - `src/index.ts` – MCP server and tool handlers.
 - `src/db.ts` – Postgres + pgvector access (insert, search, list, stats).
-- `src/embeddings.ts` – OpenAI embedding calls.
+- `src/embeddings.ts` – Embedding calls (OpenAI or Ollama, env-driven).
 
 ## Optional: metadata extraction
 

@@ -7,9 +7,15 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "test:env": "node scripts/test-env.mjs"
   },
-  "keywords": ["mcp", "open-brain", "pgvector", "embeddings"],
+  "keywords": [
+    "mcp",
+    "open-brain",
+    "pgvector",
+    "embeddings"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=18"
@@ -24,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.18.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }
