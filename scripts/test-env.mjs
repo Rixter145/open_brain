@@ -1,18 +1,24 @@
 #!/usr/bin/env node
 /**
  * Test that .env is loaded, DATABASE_URL is set, database is reachable,
- * thoughts table exists, and embeddings work (OpenAI or Ollama per EMBEDDING_PROVIDER).
+ * thoughts table exists, and embeddings work (OpenAI, Google, or Ollama per EMBEDDING_PROVIDER).
  * Does not print secret values.
  */
 import "dotenv/config";
 import pg from "pg";
+import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 
 const has = (v) => typeof v === "string" && v.trim().length > 0;
 
+function useGoogle() {
+  const p = process.env.EMBEDDING_PROVIDER;
+  return p === "google" || p === "gemini";
+}
+
 function useOllama() {
   if (process.env.EMBEDDING_PROVIDER === "ollama") return true;
-  if (!has(process.env.OPENAI_API_KEY) && has(process.env.OLLAMA_HOST)) return true;
+  if (!useGoogle() && !has(process.env.OPENAI_API_KEY) && has(process.env.OLLAMA_HOST)) return true;
   return false;
 }
 
@@ -21,6 +27,8 @@ function main() {
 
   const dbUrl = process.env.DATABASE_URL;
   const openaiKey = process.env.OPENAI_API_KEY;
+  const googleKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+  const useGoogleProvider = useGoogle();
   const ollama = useOllama();
 
   if (!has(dbUrl)) {
@@ -41,12 +49,18 @@ function main() {
     console.log("    (debug) " + redacted);
   }
 
-  if (ollama) {
+  if (useGoogleProvider) {
+    if (!has(googleKey)) {
+      console.error("FAIL: GOOGLE_API_KEY (or GEMINI_API_KEY) is missing or empty. Set it in .env when EMBEDDING_PROVIDER=google.");
+      process.exit(1);
+    }
+    console.log("OK: Using Google AI Studio for embeddings");
+  } else if (ollama) {
     const host = process.env.OLLAMA_HOST || "http://localhost:11434";
     console.log("OK: Using Ollama for embeddings (" + host + ")");
   } else {
     if (!has(openaiKey)) {
-      console.error("FAIL: OPENAI_API_KEY is missing or empty. Set it in .env or use EMBEDDING_PROVIDER=ollama.");
+      console.error("FAIL: OPENAI_API_KEY is missing or empty. Set it in .env or use EMBEDDING_PROVIDER=ollama or EMBEDDING_PROVIDER=google.");
       process.exit(1);
     }
     console.log("OK: OPENAI_API_KEY is set");
@@ -64,9 +78,14 @@ function main() {
       if (tableExists) {
         console.log("OK: thoughts table exists");
       } else {
-        console.log("WARN: thoughts table not found. Run schema.sql or schema-ollama.sql in your database.");
+        const schemaHint = useGoogleProvider || ollama
+          ? "Run schema-ollama.sql (768 dimensions) in your database."
+          : "Run schema.sql or schema-ollama.sql in your database.";
+        console.log("WARN: thoughts table not found. " + schemaHint);
       }
-      return ollama ? testOllama() : testOpenAI(openaiKey);
+      if (useGoogleProvider) return testGoogle(googleKey);
+      if (ollama) return testOllama();
+      return testOpenAI(openaiKey);
     })
     .then(() => {
       console.log("\nEnv check passed.");
@@ -107,6 +126,20 @@ async function testOllama() {
     throw new Error("Ollama returned invalid embedding (expected 768 dimensions)");
   }
   console.log("OK: Ollama API works (embedding test passed)");
+}
+
+async function testGoogle(apiKey) {
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.embedContent({
+    model: "gemini-embedding-001",
+    contents: "test",
+    config: { outputDimensionality: 768 },
+  });
+  const vec = response.embeddings?.[0]?.values;
+  if (!vec || !Array.isArray(vec) || vec.length !== 768) {
+    throw new Error("Google returned invalid embedding (expected 768 dimensions)");
+  }
+  console.log("OK: Google AI Studio API works (embedding test passed)");
 }
 
 async function testOpenAI(apiKey) {

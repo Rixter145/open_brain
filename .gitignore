@@ -11,3 +11,6 @@ Thumbs.db
 *.log
 .idea/
 .vscode/
+
+# Cursor MCP config (local only; public repo users set up their own)
+.cursor/

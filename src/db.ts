@@ -21,7 +21,6 @@ function getPool(): Pool {
   if (!url) throw new Error("DATABASE_URL is required");
   if (!pool) {
     pool = new pg.Pool({ connectionString: url, max: 5 });
-    pgvector.registerTypes(pool as unknown as pg.Client);
   }
   return pool;
 }
@@ -37,6 +36,7 @@ export async function insertThought(params: {
 }): Promise<ThoughtRow> {
   const client = await getPool().connect();
   try {
+    pgvector.registerTypes(client);
     const embeddingSql = pgvector.toSql(params.embedding);
     const res = await client.query<ThoughtRow>(
       `INSERT INTO thoughts (content, embedding, people, topics, type, action_items, source)

@@ -10,7 +10,7 @@ One shared memory layer for Cursor, Claude, and any MCP client: thoughts stored 
 
 - **Node.js** 18+
 - **Postgres** 15+ with the **pgvector** extension (e.g. [Supabase](https://supabase.com) free tier, or self‑hosted).
-- **OpenAI API key** (for embeddings), or **Ollama** for free local embeddings (see [Using Ollama](#using-ollama-free-embeddings) below).
+- **OpenAI API key** (for embeddings), **Google AI Studio API key** (see [Using Google AI Studio](#using-google-ai-studio)), or **Ollama** for free local embeddings (see [Using Ollama](#using-ollama-free-embeddings) below).
 
 ## Finish setup on this machine
 
@@ -20,9 +20,9 @@ One shared memory layer for Cursor, Claude, and any MCP client: thoughts stored 
    npm install
    npm run build
    ```
-2. **Env**: Edit `.env` in the project root and set `DATABASE_URL` and `OPENAI_API_KEY`.
+2. **Env**: Edit `.env` in the project root and set `DATABASE_URL` and your embedding provider key (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, or use `EMBEDDING_PROVIDER=ollama`).
 3. **Database**: If you don’t have a DB yet, follow [Database setup](#1-database-setup) below (Supabase free tier is the easiest). Then run [schema.sql](schema.sql) once.
-4. **Cursor**: Add the Open Brain MCP server in Cursor Settings → MCP (see [Connect clients](#3-connect-clients) below), then reload the window.
+4. **Client**: Add the Open Brain MCP server in your MCP client (see [Connect clients](#3-connect-clients) below), then reload.
 
 ---
 
@@ -40,6 +40,20 @@ To avoid paying for OpenAI, you can use **Ollama** with **nomic-embed-text** (ru
 6. Restart Cursor (or reload the window).
 
 After that, capture and search use your local Ollama embeddings. You cannot mix OpenAI (1536) and Ollama (768) in the same table.
+
+---
+
+## Using Google AI Studio
+
+To use **Google AI Studio (Gemini)** for embeddings instead of OpenAI:
+
+1. **Get an API key** at [Google AI Studio](https://aistudio.google.com/app/apikey). Sign in, create or select a project, and create an API key.
+2. **In `.env`:** set `EMBEDDING_PROVIDER=google` and `GOOGLE_API_KEY=your-key`. You do **not** need `OPENAI_API_KEY`.
+3. **Database:** Google embeddings use **768 dimensions** (same as Ollama). Use the same schema: if you don’t already have a 768-dim table, run [schema-ollama.sql](schema-ollama.sql) (or run `DROP TABLE IF EXISTS thoughts;` then the contents of schema-ollama.sql).
+4. **Cursor MCP:** In the Open Brain server env, include `EMBEDDING_PROVIDER=google` and `GOOGLE_API_KEY`. No `OPENAI_API_KEY` needed.
+5. Restart Cursor (or reload the window).
+
+You cannot mix different embedding dimensions in the same table (OpenAI 1536 vs Ollama/Google 768).
 
 ---
 
@@ -96,7 +110,9 @@ npm run build
 Set environment variables (or use a `.env` file with something like `dotenv` if you add it):
 
 - **`DATABASE_URL`** – Postgres connection string (e.g. `postgresql://user:pass@host:5432/dbname`).
-- **`OPENAI_API_KEY`** – OpenAI API key for embeddings.
+- **`OPENAI_API_KEY`** – OpenAI API key for embeddings (default provider).
+- **`GOOGLE_API_KEY`** – Google AI Studio API key when `EMBEDDING_PROVIDER=google` (get one at [Google AI Studio](https://aistudio.google.com/app/apikey)).
+- **`EMBEDDING_PROVIDER`** – Optional. Set to `ollama`, `google`, or `gemini` to use that provider instead of OpenAI.
 
 Run the server (stdio; clients will start it as a subprocess):
 
@@ -107,48 +123,32 @@ npm start
 
 ## 3. Connect clients
 
-### Cursor
+Any MCP client (Cursor, Claude Desktop, etc.) can connect to Open Brain. Add a server entry that runs the built server and passes the required env.
 
-1. Open Cursor Settings → **MCP** (or edit your MCP config file).
-2. Add a server entry for Open Brain, for example:
+**Server entry shape:** `command`: `"node"`, `args`: path to `dist/index.js` (absolute path, or relative to the workspace if your client uses this repo as the working directory). Include `env` with `DATABASE_URL` and your embedding provider key (`OPENAI_API_KEY`, or `GOOGLE_API_KEY` + `EMBEDDING_PROVIDER=google`, or use Ollama and set `EMBEDDING_PROVIDER=ollama`).
 
-```json
-{
-  "mcpServers": {
-    "open-brain": {
-      "command": "node",
-      "args": ["C:\\Users\\rix\\OneDrive\\open-brain\\dist\\index.js"],
-      "env": {
-        "DATABASE_URL": "postgresql://...",
-        "OPENAI_API_KEY": "sk-..."
-      }
-    }
-  }
-}
-```
-
-Use the real path to `dist/index.js` on your machine. Restart Cursor so it picks up the new server.
-
-### Claude Desktop
-
-In Claude Desktop’s MCP config (e.g. `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+Example (replace the path and env values with your own):
 
 ```json
 {
   "mcpServers": {
     "open-brain": {
       "command": "node",
-      "args": ["C:\\Users\\rix\\OneDrive\\open-brain\\dist\\index.js"],
+      "args": ["/path/to/open_brain/dist/index.js"],
       "env": {
-        "DATABASE_URL": "postgresql://...",
-        "OPENAI_API_KEY": "sk-..."
+        "DATABASE_URL": "postgresql://user:password@host:5432/database",
+        "GOOGLE_API_KEY": "your-key",
+        "EMBEDDING_PROVIDER": "google"
       }
     }
   }
 }
 ```
 
-Again, use your actual path and env values. Restart Claude Desktop.
+- **Cursor:** Settings → MCP, or project-level `.cursor/mcp.json` (see your client’s docs for config location).
+- **Claude Desktop:** e.g. `%APPDATA%\\Claude\\claude_desktop_config.json` on Windows.
+
+Restart the client after changing the config.
 
 ## MCP tools
 
@@ -163,14 +163,14 @@ All tools return plain text (and optional metadata) so any model can interpret t
 
 ## Embedding model
 
-By default the server uses **OpenAI `text-embedding-3-small`** (1536 dimensions). If `EMBEDDING_PROVIDER=ollama` (or `OPENAI_API_KEY` is unset and `OLLAMA_HOST` is set), it uses **Ollama `nomic-embed-text`** (768 dimensions) instead. Use the matching schema ([schema.sql](schema.sql) for OpenAI, [schema-ollama.sql](schema-ollama.sql) for Ollama). Do not change the embedding model without re-embedding existing rows.
+By default the server uses **OpenAI `text-embedding-3-small`** (1536 dimensions). If `EMBEDDING_PROVIDER=ollama` (or `OPENAI_API_KEY` is unset and `OLLAMA_HOST` is set), it uses **Ollama `nomic-embed-text`** (768 dimensions). If `EMBEDDING_PROVIDER=google` or `gemini`, it uses **Google Gemini text-embedding** (768 dimensions via `outputDimensionality`). Use the matching schema: [schema.sql](schema.sql) for OpenAI (1536 dims), [schema-ollama.sql](schema-ollama.sql) for Ollama or Google (768 dims). Do not change the embedding model without re-embedding existing rows.
 
 ## Project layout
 
 - `schema.sql` – Postgres + pgvector schema for OpenAI (1536 dims). `schema-ollama.sql` for Ollama (768 dims).
 - `src/index.ts` – MCP server and tool handlers.
 - `src/db.ts` – Postgres + pgvector access (insert, search, list, stats).
-- `src/embeddings.ts` – Embedding calls (OpenAI or Ollama, env-driven).
+- `src/embeddings.ts` – Embedding calls (OpenAI, Google Gemini, or Ollama, env-driven).
 
 ## Optional: metadata extraction
 

@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test:env": "node scripts/test-env.mjs"
+    "test:env": "node scripts/test-env.mjs",
+    "init-db": "node scripts/init-db.mjs"
   },
   "keywords": [
     "mcp",
@@ -21,6 +22,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@google/genai": "^1.0.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "dotenv": "^16.4.5",
     "openai": "^4.77.0",
