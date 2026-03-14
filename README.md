@@ -15,8 +15,8 @@ One shared memory layer for Cursor, Claude, and any MCP client: thoughts stored 
 ## Finish setup on this machine
 
 1. **Build** (in a terminal where Node/npm are available):
-   ```powershell
-   cd "c:\Users\rix\OneDrive\open-brain"
+   ```bash
+   cd open_brain
    npm install
    npm run build
    ```
@@ -147,6 +147,27 @@ Example (replace the path and env values with your own):
 
 - **Cursor:** Settings → MCP, or project-level `.cursor/mcp.json` (see your client’s docs for config location).
 - **Claude Desktop:** e.g. `%APPDATA%\\Claude\\claude_desktop_config.json` on Windows.
+- **Abacus AI Deep Agent:** [MCP Servers How-to](https://abacus.ai/help/chatllm-ai-super-assistant/mcp-servers). Go to **Configure MCP** → paste the JSON below into **MCP JSON Config** (paste only the inner object; do not wrap in `mcpServers`). Replace `DATABASE_URL` and `OPENAI_API_KEY` with your values. The server runs in Abacus’s environment and needs no local files—only env vars.
+
+**Abacus AI — copy this into MCP JSON Config:**  
+Replace `@yourusername` with your npm scope if you published the package (or use the maintainer's published package name).
+
+```json
+{
+  "open_brain": {
+    "command": "npx",
+    "args": ["-y", "@yourusername/open-brain"],
+    "env": {
+      "DATABASE_URL": "postgresql://user:password@host:5432/database",
+      "OPENAI_API_KEY": "your-key"
+    }
+  }
+}
+```
+
+For **Google** or **Ollama** embeddings, add `EMBEDDING_PROVIDER` and the matching key to `env` (see [Using Google AI Studio](#using-google-ai-studio), [Using Ollama](#using-ollama-free-embeddings)).
+
+**Cursor / Claude Desktop** — use the same block but nest it under `mcpServers`: `{ "mcpServers": { "open_brain": { ... } } }`.
 
 Restart the client after changing the config.
 
@@ -171,6 +192,16 @@ By default the server uses **OpenAI `text-embedding-3-small`** (1536 dimensions)
 - `src/index.ts` – MCP server and tool handlers.
 - `src/db.ts` – Postgres + pgvector access (insert, search, list, stats).
 - `src/embeddings.ts` – Embedding calls (OpenAI, Google Gemini, or Ollama, env-driven).
+
+## Publishing to npm
+
+npm rejects unscoped `open-brain` as too similar to an existing package. To publish so clients can use `npx @yourusername/open-brain` (e.g. Abacus AI):
+
+1. In [package.json](package.json), set `"name": "@yourusername/open-brain"` (replace `yourusername` with your npm scope).
+2. Log in: `npm login` (username, password, email, OTP if 2FA enabled).
+3. From the repo root: `npm publish --access=public`.
+
+The `prepublishOnly` script builds before publish; the package includes only `dist/`. A pre-built package may also be available on npm; see the npx config above and use that package name if you prefer not to build from source.
 
 ## Optional: metadata extraction
 
