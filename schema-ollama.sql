@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS thoughts (
   type TEXT,
   action_items TEXT[] DEFAULT '{}',
   source TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  invalidated_at TIMESTAMPTZ
 );
 
 -- HNSW index for fast approximate nearest-neighbor search (cosine distance).

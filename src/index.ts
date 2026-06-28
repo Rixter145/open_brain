@@ -6,6 +6,7 @@ import { z } from "zod";
 import { embed } from "./embeddings.js";
 import {
   insertThought,
+  invalidateThought,
   searchThoughts,
   listRecentThoughts,
   getBrainStats,
@@ -44,6 +45,37 @@ server.registerTool(
             text: `Captured thought (id: ${row.id}). You can find it later with search_brain or list_recent.`,
           },
         ],
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        content: [{ type: "text" as const, text: `Error: ${msg}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// invalidate_thought: soft-delete a thought by id so it stops appearing in search/list/stats
+server.registerTool(
+  "invalidate_thought",
+  {
+    title: "Invalidate thought",
+    description:
+      "Mark a stored thought as invalid/obsolete by its id (soft-delete). It stops appearing in search_brain, list_recent, and brain_stats. The id comes from search_brain, list_recent, or capture_thought.",
+    inputSchema: z.object({
+      id: z.string().uuid().describe("Thought id from search_brain / list_recent / capture_thought"),
+    }),
+  },
+  async ({ id }) => {
+    try {
+      const n = await invalidateThought(id);
+      const text =
+        n > 0
+          ? `Invalidated thought ${id}. It will no longer appear in search or recent lists.`
+          : `No active thought ${id} (already invalidated or not found).`;
+      return {
+        content: [{ type: "text" as const, text }],
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

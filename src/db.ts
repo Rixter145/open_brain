@@ -60,6 +60,23 @@ export async function insertThought(params: {
   }
 }
 
+// Soft-delete a thought by id: mark it invalidated so it stops appearing in reads.
+// Idempotent — re-invalidating an already-invalid (or missing) row affects 0 rows.
+export async function invalidateThought(id: string): Promise<number> {
+  const client = await getPool().connect();
+  try {
+    const res = await client.query(
+      `UPDATE thoughts
+         SET invalidated_at = now(), updated_at = now()
+       WHERE id = $1::uuid AND invalidated_at IS NULL`,
+      [id]
+    );
+    return res.rowCount ?? 0;
+  } finally {
+    client.release();
+  }
+}
+
 function parseThoughtRow(row: Record<string, unknown>): ThoughtRow {
   let vec: number[] = [];
   const e = row.embedding;
@@ -95,6 +112,7 @@ export async function searchThoughts(
     const res = await client.query<Record<string, unknown>>(
       `SELECT id, content, embedding::text, people, topics, type, action_items, source, created_at
        FROM thoughts
+       WHERE invalidated_at IS NULL
        ORDER BY embedding <=> $1::vector
        LIMIT $2`,
       [embeddingSql, limit]
@@ -115,7 +133,7 @@ export async function listRecentThoughts(
       const res = await client.query<Record<string, unknown>>(
         `SELECT id, content, embedding::text, people, topics, type, action_items, source, created_at
          FROM thoughts
-         WHERE created_at >= now() - ($2::text || ' days')::interval
+         WHERE invalidated_at IS NULL AND created_at >= now() - ($2::text || ' days')::interval
          ORDER BY created_at DESC
          LIMIT $1`,
         [limit, days]
@@ -125,6 +143,7 @@ export async function listRecentThoughts(
     const res = await client.query<Record<string, unknown>>(
       `SELECT id, content, embedding::text, people, topics, type, action_items, source, created_at
        FROM thoughts
+       WHERE invalidated_at IS NULL
        ORDER BY created_at DESC
        LIMIT $1`,
       [limit]
@@ -147,7 +166,8 @@ export async function getBrainStats(): Promise<{
          count(*)::text AS total,
          count(*) FILTER (WHERE created_at >= now() - interval '7 days')::text AS last_7,
          count(*) FILTER (WHERE created_at >= now() - interval '30 days')::text AS last_30
-       FROM thoughts`
+       FROM thoughts
+       WHERE invalidated_at IS NULL`
     );
     const row = res.rows[0];
     return {
@@ -167,5 +187,5 @@ export function formatThoughtForOutput(t: ThoughtRow): string {
   if (t.type) meta.push(`Type: ${t.type}`);
   if (t.action_items?.length) meta.push(`Action items: ${t.action_items.join("; ")}`);
   const metaLine = meta.length ? `[${meta.join(" | ")}]\n` : "";
-  return `${metaLine}${t.content}\n— ${t.created_at.toISOString().slice(0, 10)}${t.source ? ` (${t.source})` : ""}`;
+  return `${metaLine}${t.content}\n— ${t.created_at.toISOString().slice(0, 10)}${t.source ? ` (${t.source})` : ""} · id: ${t.id}`;
 }
