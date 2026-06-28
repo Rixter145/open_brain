@@ -2,8 +2,9 @@
 
 One shared memory layer for Cursor, Claude, and any MCP client: thoughts stored in **Postgres + pgvector**, exposed via an **MCP server** with semantic search and capture.
 
-- **Capture**: Save thoughts from any client; each is embedded (OpenAI `text-embedding-3-small`) and stored.
-- **Retrieve**: Semantic search by meaning, list recent thoughts, or view stats.
+- **Capture**: Save thoughts from any client; each is embedded and stored with its row id.
+- **Retrieve**: Semantic search by meaning, list recent thoughts, or view stats. Results include the row id.
+- **Invalidate**: Soft-delete a thought by id — it stops appearing in search and counts but is never hard-deleted.
 - **Same brain everywhere**: One Postgres DB and one MCP server; point Cursor, Claude Desktop, and other clients at it.
 
 ## Prerequisites
@@ -175,12 +176,13 @@ Restart the client after changing the config.
 
 | Tool | Purpose |
 |------|--------|
-| **capture_thought** | Save a thought (content + optional source). It is embedded and stored. |
-| **search_brain** | Semantic search by meaning (e.g. “career change”, “meeting with Sarah”). |
-| **list_recent** | List recent thoughts (optional: last N days). |
+| **capture_thought** | Save a thought (content + optional source). It is embedded and stored. Returns the row id. |
+| **search_brain** | Semantic search by meaning (e.g. “career change”, “meeting with Sarah”). Each result includes its row id. |
+| **list_recent** | List recent thoughts (optional: last N days). Each result includes its row id. |
 | **brain_stats** | Count of thoughts and activity in the last 7 and 30 days. |
+| **invalidate_thought** | Soft-delete a thought by id. It stops appearing in `search_brain`, `list_recent`, and `brain_stats`. The row is hidden, not deleted — reversible in SQL if needed. |
 
-All tools return plain text (and optional metadata) so any model can interpret the results.
+All tools return plain text so any model can interpret the results. `search_brain`, `list_recent`, and `brain_stats` automatically exclude invalidated thoughts. To invalidate, pass the id from any result to `invalidate_thought`.
 
 ## Embedding model
 
@@ -188,10 +190,11 @@ By default the server uses **OpenAI `text-embedding-3-small`** (1536 dimensions)
 
 ## Project layout
 
-- `schema.sql` – Postgres + pgvector schema for OpenAI (1536 dims). `schema-ollama.sql` for Ollama (768 dims).
-- `src/index.ts` – MCP server and tool handlers.
-- `src/db.ts` – Postgres + pgvector access (insert, search, list, stats).
+- `schema.sql` – Postgres + pgvector schema for OpenAI (1536 dims). `schema-ollama.sql` for Ollama/Google (768 dims). Both include `updated_at` and `invalidated_at` for soft-delete support.
+- `src/index.ts` – MCP server: 5 tools (capture, search, list, stats, invalidate).
+- `src/db.ts` – Postgres queries: insert, semantic search, recent list, stats, and soft-delete (all reads filter `WHERE invalidated_at IS NULL`).
 - `src/embeddings.ts` – Embedding calls (OpenAI, Google Gemini, or Ollama, env-driven).
+- `scripts/` – `init-db.mjs` (create schema), `test-env.mjs` (validate config), `test-save.mjs` (insert test thought), `encode-password.mjs` (URL-encode a DB password with special chars).
 
 ## Publishing to npm
 
